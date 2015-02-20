@@ -5,22 +5,18 @@ import time
 import os
 import exceptions
 
-# Current default QSUB template is suitable for SDSC Gordon
-QSUB_TEMPLATE = os.environ.get("IPYNB_QSUB_TEMPLATE", 'qsub -I -V -l nodes=1:ppn=16:native:flash,walltime=%d:00 -q normal')
+# Total compute time to reserve node (in minutes)
+# FIXME - make this query the user for the time
+minutes = 30
 
-NOTEBOOK_TEMPLATE = os.environ.get("IPYNB_NOTEBOOK_TEMPLATE", 'ipython notebook --pylab=inline --port=%d --no-browser')
+# Build a unique port number from the user id
+userid = os.geteuid()
+port = 8000 + user_id
 
-try: 
-    PORT = int(os.environ["IPYNB_PORT"])
-except exceptions.KeyError:
-    print("Need to define IPYNB_PORT environmental variable [>1024], i.e. export IPYNB_PORT=XXXX")
-    sys.exit(1)
+# Torque template reserves
+qsub_template = 'qsub -I -V -l nodes=1:ppn=1:walltime=%d:00 -q normal'.format(time)
+notebook_template = 'ipython notebook --pylab=inline --port=%d --no-browser'.format(port)
 
-try: 
-    MINUTES = int(os.environ["IPYNB_MINUTES"])
-except exceptions.KeyError:
-    MINUTES = 30
-    print("You can define IPYNB_MINUTES environmental variable to set the duration of the job, i.e. export IPYNB_MINUTES=XX, using default %d minutes" % MINUTES)
 def readwhile(stream,func):
     while True:
         line = stream.readline()
@@ -32,7 +28,7 @@ def readwhile(stream,func):
  
 print("Requesting an interactive node")
 pqsub=Popen(['ssh','-t','-t','-4','localhost'],stdin=PIPE,stdout=PIPE,stderr=PIPE)
-pqsub.stdin.write((QSUB_TEMPLATE % MINUTES)+"\n")
+pqsub.stdin.write((qsub_template % minutes)+"\n")
 pqsub.stdin.write('echo HOSTNAME=`hostname`\n')
  
 def gethostname(line):
@@ -49,18 +45,18 @@ pqsub.stdin.write('echo CD\n')
 readwhile(pqsub.stdout, lambda line: line.startswith('CD'))
     
 print("Launching the notebook")
-pqsub.stdin.write((NOTEBOOK_TEMPLATE % PORT)+"\n")
+pqsub.stdin.write((notebook_template % port)+"\n")
 readwhile(pqsub.stdout, lambda line: line.find('NotebookApp')>0)
  
 print("Setting up SSH tunnel from computing to login node")
-tunnel = ['ssh', '-t', '-Y', hostname, '-L', '%s:localhost:%s'% (PORT,PORT)]
+tunnel = ['ssh', '-t', '-Y', hostname, '-L', '%s:localhost:%s'% (port,port)]
 ptunnel = Popen(tunnel,stdout=PIPE,stdin=PIPE)
 ptunnel.stdin.write('echo TUNNEL\n')
 readwhile(ptunnel.stdout,lambda line: line.startswith('TUNNEL'))
  
 print("Succesfully opened notebook!")
 print("Kill this process to end your notebook connection.")
-time.sleep(MINUTES*60)
+time.sleep(minutes*60)
  
 pqsub.kill()
 ptunnel.kill()
